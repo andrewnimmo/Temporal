@@ -16,7 +16,6 @@ import (
 )
 
 func Test_API_Routes_Frontend(t *testing.T) {
-	t.Skip("disabled pending refactor")
 	// load configuration
 	cfg, err := config.LoadConfig("../../testenv/config.json")
 	if err != nil {
@@ -36,12 +35,15 @@ func Test_API_Routes_Frontend(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	header, err := loginHelper(api, testUser, testUserPass)
+	if err != nil {
+		t.Fatal(err)
+	}
 	// test pin cost calculate
 	// /v2/frontend/cost/calculate/:hash/:holTime
 	var floatAPIResp floatAPIResponse
-	if err := sendRequest(
-		api, "GET", "/v2/frontend/cost/calculate/"+hash+"/5", 200, nil, nil, &floatAPIResp,
+	if err := sendRequestWithAuth(
+		api, "GET", "/v2/frontend/cost/calculate/"+hash+"/5", header, 200, nil, nil, &floatAPIResp,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +70,7 @@ func Test_API_Routes_Frontend(t *testing.T) {
 	bodyWriter.Close()
 	testRecorder = httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/v2/frontend/cost/calculate/file", bodyBuf)
-	req.Header.Add("Authorization", authHeader)
+	req.Header.Add("Authorization", header)
 	req.Header.Add("Content-Type", bodyWriter.FormDataContentType())
 	urlValues := url.Values{}
 	urlValues.Add("hold_time", "5")
