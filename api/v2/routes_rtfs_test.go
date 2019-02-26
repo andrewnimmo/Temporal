@@ -3,6 +3,7 @@ package v2
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"io/ioutil"
 	"mime/multipart"
@@ -11,10 +12,82 @@ import (
 	"os"
 	"testing"
 
+	"github.com/c2h5oh/datasize"
+
 	"github.com/RTradeLtd/Temporal/mocks"
 	"github.com/RTradeLtd/config"
 	"github.com/RTradeLtd/database/models"
+	shell "github.com/RTradeLtd/go-ipfs-api"
 )
+
+const (
+	goodTestPinHash = "QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv"
+	badTestPinHash  = "QmnotARealHash"
+)
+
+func Test_API_Routes_IPFS_PIN(t *testing.T) {
+	type args struct {
+		hash            string
+		holdTime        string
+		size            int
+		firstStatError  error
+		secondStatError error
+	}
+	tests := []struct {
+		name       string
+		args       args
+		wantStatus int
+	}{
+		{"Success", args{goodTestPinHash, "1", 100000, nil, nil}, 200},
+		{"Failure-Bad-Hash", args{badTestPinHash, "1", 100000, nil, nil}, 400},
+		{"Failure-Bad-Hold-Time", args{goodTestPinHash, "bilboisnottime", 10000, nil, nil}, 400},
+		{"Failure-Bad-Hold-Time-Length", args{goodTestPinHash, "10000000", 10000, nil, nil}, 400},
+		{"Failure-Size-To-Big", args{goodTestPinHash, "1", int(datasize.TB.Bytes()), nil, nil}, 400},
+		{"Failure-Object-Stat-Error", args{goodTestPinHash, "1", 1000, errors.New("bad"), nil}, 400},
+		{"Failure-Object-Stat-Error", args{goodTestPinHash, "1", 1000, nil, errors.New("bad")}, 400},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// load configuration
+			cfg, err := config.LoadConfig("../../testenv/config.json")
+			if err != nil {
+				t.Fatal(err)
+			}
+			db, err := loadDatabase(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// setup fake mock clients
+			fakeLens := &mocks.FakeLensV2Client{}
+			fakeOrch := &mocks.FakeServiceClient{}
+			fakeSigner := &mocks.FakeSignerClient{}
+			fakeIPFS := &mocks.FakeManager{}
+			// setup fake api
+			api, _, err := setupAPI(fakeLens, fakeOrch, fakeSigner, cfg, db)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// load fake rtfs
+			api.ipfs = fakeIPFS
+			// a successful response needs to setup 2 mock stat calls
+			fakeIPFS.StatReturnsOnCall(0, &shell.ObjectStats{
+				CumulativeSize: tt.args.size,
+			}, tt.args.firstStatError)
+			fakeIPFS.StatReturnsOnCall(1, &shell.ObjectStats{
+				CumulativeSize: tt.args.size,
+			}, tt.args.secondStatError)
+			urlValues := url.Values{}
+			urlValues.Add("hold_time", tt.args.holdTime)
+			var apiResp apiResponse
+			if err := sendRequest(
+				api, "POST", "/v2/ipfs/public/pin/"+tt.args.hash, tt.wantStatus, nil, urlValues, &apiResp,
+			); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
 
 func Test_API_Routes_IPFS_Public(t *testing.T) {
 	// load configuration
@@ -118,51 +191,6 @@ func Test_API_Routes_IPFS_Public(t *testing.T) {
 	urlValues.Add("hold_time", "5")
 	req.PostForm = urlValues
 	api.r.ServeHTTP(testRecorder, req)
-
-	// test pinning - success
-	// /v2/ipfs/public/pin
-	apiResp = apiResponse{}
-	urlValues = url.Values{}
-	urlValues.Add("hold_time", "5")
-	if err := sendRequest(
-		api, "POST", "/v2/ipfs/public/pin/"+hash, 200, nil, urlValues, &apiResp,
-	); err != nil {
-		t.Fatal(err)
-	}
-	// validate the response code
-	if apiResp.Code != 200 {
-		t.Fatal("bad api status code from  /v2/ipfs/public/pin")
-	}
-
-	// test pinning - failure (bad hash)
-	// /v2/ipfs/public/pin
-	apiResp = apiResponse{}
-	urlValues = url.Values{}
-	urlValues.Add("hold_time", "5")
-	if err := sendRequest(
-		api, "POST", "/v2/ipfs/public/pin/notarealhash", 400, nil, urlValues, &apiResp,
-	); err != nil {
-		t.Fatal(err)
-	}
-	// validate the response code
-	if apiResp.Code != 400 {
-		t.Fatal("bad api status code from  /v2/ipfs/public/pin")
-	}
-
-	// test pinning - failure (bad hold_time)
-	// /v2/ipfs/public/pin
-	apiResp = apiResponse{}
-	urlValues = url.Values{}
-	urlValues.Add("hold_time", "notanumber")
-	if err := sendRequest(
-		api, "POST", "/v2/ipfs/public/pin/"+hash, 400, nil, urlValues, &apiResp,
-	); err != nil {
-		t.Fatal(err)
-	}
-	// validate the response code
-	if apiResp.Code != 400 {
-		t.Fatal("bad api status code from  /v2/ipfs/public/pin")
-	}
 
 	// test pubsub publish (success)
 	// /v2/ipfs/pubsub/publish/topic
