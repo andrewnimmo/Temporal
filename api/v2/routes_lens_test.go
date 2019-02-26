@@ -15,7 +15,6 @@ var (
 )
 
 func Test_API_Routes_Lens_Index(t *testing.T) {
-	t.Skip("disabled pending refactor")
 	type args struct {
 		objectType       string
 		objectIdentifier string
@@ -55,14 +54,18 @@ func Test_API_Routes_Lens_Index(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			header, err := loginHelper(api, testUser, testUserPass)
+			if err != nil {
+				t.Fatal(err)
+			}
 			var interfaceAPIResp interfaceAPIResponse
 			urlValues := url.Values{}
 			urlValues.Add("object_identifier", tt.args.objectIdentifier)
 			urlValues.Add("object_type", tt.args.objectType)
 			urlValues.Add("reindex", tt.args.reindex)
 			fakeLens.IndexReturnsOnCall(tt.args.callCount, &pb.IndexResp{Doc: &pb.Document{Hash: tt.args.objectIdentifier}}, tt.args.err)
-			if err := sendRequest(
-				api, "POST", "/v2/lens/index", tt.wantStatus, nil, urlValues, &interfaceAPIResp,
+			if err := sendRequestWithAuth(
+				api, "POST", "/v2/lens/index", header, tt.wantStatus, nil, urlValues, &interfaceAPIResp,
 			); err != nil {
 				t.Fatal(err)
 			}
@@ -115,6 +118,10 @@ func Test_API_Routes_Lens_Search(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			header, err := loginHelper(api, testUser, testUserPass)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if !tt.args.result {
 				fakeLens.SearchReturnsOnCall(
 					tt.args.callCount,
@@ -141,8 +148,8 @@ func Test_API_Routes_Lens_Search(t *testing.T) {
 			urlValues.Add("categories", tt.args.category)
 			urlValues.Add("hashes", tt.args.hash)
 			urlValues.Add("required", tt.args.required)
-			if err := sendRequest(
-				api, "POST", "/v2/lens/search", tt.wantStatus, nil, urlValues, &interfaceAPIResp,
+			if err := sendRequestWithAuth(
+				api, "POST", "/v2/lens/search", header, tt.wantStatus, nil, urlValues, &interfaceAPIResp,
 			); err != nil {
 				t.Fatal(err)
 			}
