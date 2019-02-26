@@ -8,7 +8,6 @@ import (
 )
 
 func Test_API_Routes_Database(t *testing.T) {
-	t.Skip("disabled pending refactor")
 	// load configuration
 	cfg, err := config.LoadConfig("../../testenv/config.json")
 	if err != nil {
@@ -28,12 +27,15 @@ func Test_API_Routes_Database(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	header, err := loginHelper(api, testUser, testUserPass)
+	if err != nil {
+		t.Fatal(err)
+	}
 	// test database specific uploads
 	// /v2/database/uploads/testuser
 	var interfaceAPIResp interfaceAPIResponse
-	if err := sendRequest(
-		api, "GET", "/v2/database/uploads", 200, nil, nil, &interfaceAPIResp,
+	if err := sendRequestWithAuth(
+		api, "GET", "/v2/database/uploads", header, 200, nil, nil, &interfaceAPIResp,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -44,8 +46,8 @@ func Test_API_Routes_Database(t *testing.T) {
 
 	// test get encrypted uploads
 	// /v2/frontend/uploads/encrypted
-	if err := sendRequest(
-		api, "GET", "/v2/database/uploads/encrypted", 200, nil, nil, nil,
+	if err := sendRequestWithAuth(
+		api, "GET", "/v2/database/uploads/encrypted", header, 200, nil, nil, nil,
 	); err != nil {
 		t.Fatal(err)
 	}
