@@ -33,6 +33,7 @@ func (api *API) createIPFSNetwork(c *gin.Context) {
 	// make sure the name is something other than public
 	if strings.ToLower(networkName) == "public" {
 		Fail(c, errors.New("network name can't be public, or PUBLIC"))
+		return
 	}
 	// retrieve parameters - thse are all optional
 	swarmKey, _ := c.GetPostForm("swarm_key")
