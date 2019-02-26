@@ -23,7 +23,7 @@ const (
 	badTestPinHash  = "QmnotARealHash"
 )
 
-func Test_API_Routes_IPFS_PIN(t *testing.T) {
+func Test_API_Routes_IPFS_Public_PIN(t *testing.T) {
 	type args struct {
 		hash            string
 		holdTime        string
@@ -92,7 +92,7 @@ func Test_API_Routes_IPFS_PIN(t *testing.T) {
 	}
 }
 
-func Test_API_Routes_IPFS_File_Add(t *testing.T) {
+func Test_API_Routes_IPFS_Public_File_Add(t *testing.T) {
 
 	type args struct {
 		filePath string
@@ -102,10 +102,12 @@ func Test_API_Routes_IPFS_File_Add(t *testing.T) {
 		name       string
 		args       args
 		wantStatus int
+		addError   error
 	}{
-		{"Success", args{"../../testenv/config.json", "1"}, 200},
-		{"Failure-Bad-Hold-Time", args{"../../testenv/config.json", "notatime"}, 400},
-		{"Failure-Hold-Time-To-Long", args{"../../testenv/config.json", "1000000"}, 400},
+		{"Success", args{"../../testenv/config.json", "1"}, 200, nil},
+		{"Failure-Bad-Hold-Time", args{"../../testenv/config.json", "notatime"}, 400, nil},
+		{"Failure-Hold-Time-To-Long", args{"../../testenv/config.json", "1000000"}, 400, nil},
+		{"Failure-Bad-Add", args{"../../testenv/config.json", "1"}, 400, errors.New("bad")},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -130,6 +132,7 @@ func Test_API_Routes_IPFS_File_Add(t *testing.T) {
 				t.Fatal(err)
 			}
 			api.ipfs = fakeManager
+			fakeManager.AddReturnsOnCall(0, "hashyboi", tt.addError)
 			// authentication
 			header, err := loginHelper(api, testUser, testUserPass)
 			if err != nil {
@@ -165,7 +168,7 @@ func Test_API_Routes_IPFS_File_Add(t *testing.T) {
 	}
 }
 
-func Test_API_Routes_IPFS_Add_Directory(t *testing.T) {
+func Test_API_Routes_IPFS_Public_Add_Directory(t *testing.T) {
 	devValue := dev
 	type args struct {
 		filePath string
@@ -183,7 +186,7 @@ func Test_API_Routes_IPFS_Add_Directory(t *testing.T) {
 		{"Failure-Not-Zip", args{"../../testenv/config.json", "1"}, 400, nil, true},
 		{"Failure-Bad-Hold-Time", args{"../../testenv/config.json", "notatime"}, 400, nil, true},
 		{"Failure-Hold-Time-To-Long", args{"../../testenv/config.json", "1000000"}, 400, nil, true},
-		// insert badd add
+		{"Failure-Bad-Add", args{"../../testfiles/testenv.zip", "1"}, 400, errors.New("bad"), true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -310,7 +313,7 @@ func Test_API_Routes_IPFS_Pubsub_Publish(t *testing.T) {
 	}
 }
 
-func Test_API_Routes_IPFS_Object_Stat(t *testing.T) {
+func Test_API_Routes_IPFS_Public_Object_Stat(t *testing.T) {
 	type args struct {
 		hash string
 	}
@@ -363,7 +366,7 @@ func Test_API_Routes_IPFS_Object_Stat(t *testing.T) {
 	}
 }
 
-func Test_API_Routes_IPFS_Dag_Get(t *testing.T) {
+func Test_API_Routes_IPFS_Public_Dag_Get(t *testing.T) {
 	type args struct {
 		hash string
 	}
@@ -417,6 +420,7 @@ func Test_API_Routes_IPFS_Dag_Get(t *testing.T) {
 }
 
 func Test_API_Routes_IPFS_Public(t *testing.T) {
+	t.Skip("temporarily disabling these tests until they are refactored")
 	// load configuration
 	cfg, err := config.LoadConfig("../../testenv/config.json")
 	if err != nil {
