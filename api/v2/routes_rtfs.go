@@ -277,7 +277,7 @@ func (api *API) addFile(c *gin.Context) {
 // TODO: add virus scanning of zip file
 func (api *API) uploadDirectory(c *gin.Context) {
 	if !dev {
-		Fail(c, errors.New("this api call is only permitted in development environments"))
+		Fail(c, errors.New("add directory call only available in dev mode"))
 		return
 	}
 	username, err := GetAuthenticatedUserFromContext(c)
@@ -373,6 +373,10 @@ func (api *API) ipfsPubSubPublish(c *gin.Context) {
 	forms, missingField := api.extractPostForms(c, "message")
 	if missingField != "" {
 		FailWithMissingField(c, missingField)
+		return
+	}
+	if forms["message"] == "" {
+		Fail(c, errors.New("message must not be empty"))
 		return
 	}
 	// validate they can submit pubsub message calls
