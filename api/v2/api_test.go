@@ -3,6 +3,7 @@ package v2
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -30,6 +31,7 @@ import (
 const (
 	tooManyCredits     = 10.9999997e+07
 	testUser           = "testuser"
+	testUserPass       = "admin"
 	testSwarmKey       = "7fcb5a1b19bdda69da7307162e3becd2d6bd485d5aad778470b305f3f306cf79"
 	testBootstrapPeer1 = "/ip4/172.218.49.115/tcp/5002/ipfs/Qmf964tiE9JaxqntDsSBGasD4aaofPQtfYZyMSJJkRrVTQ"
 	testBootstrapPeer2 = "/ip4/192.168.1.249/tcp/4001/ipfs/QmXuGVPzEz2Ji7g54AYyqoobRJNHqtnrfaEceAes2bTKMh"
@@ -96,6 +98,27 @@ func sendRequest(api *API, method, url string, wantStatus int, body io.Reader, u
 	testRecorder := httptest.NewRecorder()
 	req := httptest.NewRequest(method, url, body)
 	req.Header.Add("Authorization", authHeader)
+	req.PostForm = urlValues
+	api.r.ServeHTTP(testRecorder, req)
+	if testRecorder.Code != wantStatus {
+		return fmt.Errorf("received status %v expected %v from api call %s", testRecorder.Code, wantStatus, url)
+	}
+	if out == nil {
+		return nil
+	}
+	// unmarshal the response
+	bodyBytes, err := ioutil.ReadAll(testRecorder.Result().Body)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(bodyBytes, out)
+}
+
+// sendRequestWithAuth is a helper method used to send an API request providing the authorizaton header
+func sendRequestWithAuth(api *API, method, url, authenticationHeader string, wantStatus int, body io.Reader, urlValues url.Values, out interface{}) error {
+	testRecorder := httptest.NewRecorder()
+	req := httptest.NewRequest(method, url, body)
+	req.Header.Add("Authorization", authenticationHeader)
 	req.PostForm = urlValues
 	api.r.ServeHTTP(testRecorder, req)
 	if testRecorder.Code != wantStatus {
@@ -254,6 +277,30 @@ func Test_API_Setup(t *testing.T) {
 	if str := api.GetIPFSEndpoint("networkName"); str == "" {
 		t.Fatal("failed to construct api endpoint")
 	}
+}
+
+// loginHelper is used to return a formatted bearer token header
+func loginHelper(api *API, user, pass string) (string, error) {
+	testRecorder := httptest.NewRecorder()
+	body := fmt.Sprintf("{\n  \"username\": \"%s\",\n  \"password\": \"%s\"\n}", user, pass)
+	req := httptest.NewRequest(
+		"POST",
+		"/v2/auth/login",
+		strings.NewReader(body),
+	)
+	api.r.ServeHTTP(testRecorder, req)
+	if testRecorder.Code != 200 {
+		return "", errors.New("failed to login")
+	}
+	bodyBytes, err := ioutil.ReadAll(testRecorder.Result().Body)
+	if err != nil {
+		return "", err
+	}
+	var loginResp loginResponse
+	if err := json.Unmarshal(bodyBytes, &loginResp); err != nil {
+		return "", err
+	}
+	return "Bearer " + loginResp.Token, nil
 }
 
 func Test_API_Routes_Misc(t *testing.T) {
