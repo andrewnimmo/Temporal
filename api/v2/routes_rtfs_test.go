@@ -55,6 +55,7 @@ func Test_API_Routes_IPFS_Public_PIN(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			defer db.Close()
 
 			// setup fake mock clients
 			fakeLens := &mocks.FakeLensV2Client{}
@@ -120,6 +121,7 @@ func Test_API_Routes_IPFS_Public_File_Add(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			defer db.Close()
 
 			// setup fake mock clients
 			fakeLens := &mocks.FakeLensV2Client{}
@@ -199,6 +201,7 @@ func Test_API_Routes_IPFS_Public_Add_Directory(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			defer db.Close()
 
 			// setup fake mock clients
 			fakeLens := &mocks.FakeLensV2Client{}
@@ -277,6 +280,7 @@ func Test_API_Routes_IPFS_Pubsub_Publish(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			defer db.Close()
 
 			// setup fake mock clients
 			fakeLens := &mocks.FakeLensV2Client{}
@@ -338,6 +342,7 @@ func Test_API_Routes_IPFS_Public_Object_Stat(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			defer db.Close()
 
 			// setup fake mock clients
 			fakeLens := &mocks.FakeLensV2Client{}
@@ -391,7 +396,7 @@ func Test_API_Routes_IPFS_Public_Dag_Get(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-
+			defer db.Close()
 			// setup fake mock clients
 			fakeLens := &mocks.FakeLensV2Client{}
 			fakeOrch := &mocks.FakeServiceClient{}
