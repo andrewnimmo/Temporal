@@ -19,6 +19,7 @@ var (
 )
 
 func Test_API_Routes_IPNS_Publish(t *testing.T) {
+	t.Skip("disabled pending refactor")
 	// load configuration
 	cfg, err := config.LoadConfig("../../testenv/config.json")
 	if err != nil {
