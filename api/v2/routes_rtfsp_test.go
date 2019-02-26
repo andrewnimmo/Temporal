@@ -3,6 +3,7 @@ package v2
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"io/ioutil"
 	"mime/multipart"
@@ -13,9 +14,125 @@ import (
 
 	"github.com/RTradeLtd/Temporal/mocks"
 	"github.com/RTradeLtd/config"
-	"github.com/RTradeLtd/database/models"
 	pbOrch "github.com/RTradeLtd/grpc/nexus"
 )
+
+func Test_API_Routes_IPFS_Private_Network_Management(t *testing.T) {
+	type args struct {
+		name          string
+		swarmKey      string
+		bootStrapPeer string
+		user          string
+		peerID        string
+	}
+	tests := []struct {
+		name                string
+		args                args
+		wantStatusCreate    int
+		wantStatusStart     int
+		wantStatusStop      int
+		wantStatusRemove    int
+		createResponseError error
+		startResponseError  error
+		stopResponseError   error
+		removeResponseError error
+	}{
+		{"Success", args{"testnetwork", "", "", "", "mypeer"}, 200, 200, 200, 200, nil, nil, nil, nil},
+		{"Succes-Params", args{"testnetwork2", testSwarmKey, testBootstrapPeer1, "", "mypeer"}, 200, 200, 200, 200, nil, nil, nil, nil},
+		{"Failure-Bad-Response-Stop", args{"testnetwork3", testSwarmKey, testBootstrapPeer2, "", "mypeer"}, 200, 200, 400, 200, nil, nil, errors.New("bad"), nil},
+		{"Failure-Bad-Response-Start", args{"testnetwork4", testSwarmKey, testBootstrapPeer2, "", "mypeer"}, 200, 400, 200, 200, nil, errors.New("bad"), nil, nil},
+		{"Failure-Bad-Resposne-Remove", args{"testnetwork5", testSwarmKey, testBootstrapPeer2, "", "mypeer"}, 200, 200, 200, 400, nil, nil, nil, errors.New("bad")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// load configuration
+			cfg, err := config.LoadConfig("../../testenv/config.json")
+			if err != nil {
+				t.Fatal(err)
+			}
+			db, err := loadDatabase(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+
+			// setup fake mock clients
+			fakeLens := &mocks.FakeLensV2Client{}
+			fakeOrch := &mocks.FakeServiceClient{}
+			fakeSigner := &mocks.FakeSignerClient{}
+			fakeIPFS := &mocks.FakeManager{}
+			// setup fake api
+			api, _, err := setupAPI(fakeLens, fakeOrch, fakeSigner, cfg, db)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// load fake rtfs
+			api.ipfs = fakeIPFS
+			// seutp fake returns
+			fakeOrch.StartNetworkReturnsOnCall(
+				0,
+				&pbOrch.StartNetworkResponse{
+					PeerId:   tt.args.peerID,
+					SwarmKey: tt.args.swarmKey,
+				},
+				tt.createResponseError,
+			)
+			fakeOrch.StartNetworkReturnsOnCall(
+				1,
+				&pbOrch.StartNetworkResponse{
+					PeerId:   tt.args.peerID,
+					SwarmKey: tt.args.swarmKey,
+				},
+				tt.startResponseError,
+			)
+			fakeOrch.StopNetworkReturnsOnCall(0, nil, tt.stopResponseError)
+			fakeOrch.RemoveNetworkReturnsOnCall(0, nil, tt.removeResponseError)
+			// authentication
+			header, err := loginHelper(api, testUser, testUserPass)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var intAPIResponse interfaceAPIResponse
+			urlValues := url.Values{}
+			urlValues.Add("network_name", tt.args.name)
+			if tt.args.swarmKey != "" {
+				urlValues.Add("swarm_key", tt.args.swarmKey)
+			}
+			if tt.args.bootStrapPeer != "" {
+				urlValues.Add("bootstrap_peers", tt.args.bootStrapPeer)
+			}
+			if err := sendRequestWithAuth(
+				api, "POST", "/v2/ipfs/private/network/new", header, tt.wantStatusCreate, nil, urlValues, &intAPIResponse,
+			); err != nil {
+				t.Fatal(err)
+			}
+			intAPIResponse = interfaceAPIResponse{}
+			urlValues = url.Values{}
+			urlValues.Add("network_name", tt.args.name)
+			if err := sendRequestWithAuth(
+				api, "POST", "/v2/ipfs/private/network/stop", header, tt.wantStatusStop, nil, urlValues, &intAPIResponse,
+			); err != nil {
+				t.Fatal(err)
+			}
+			intAPIResponse = interfaceAPIResponse{}
+			urlValues = url.Values{}
+			urlValues.Add("network_name", tt.args.name)
+			if err := sendRequestWithAuth(
+				api, "POST", "/v2/ipfs/private/network/start", header, tt.wantStatusStart, nil, urlValues, &intAPIResponse,
+			); err != nil {
+				t.Fatal(err)
+			}
+			intAPIResponse = interfaceAPIResponse{}
+			urlValues = url.Values{}
+			urlValues.Add("network_name", tt.args.name)
+			if err := sendRequestWithAuth(
+				api, "DELETE", "/v2/ipfs/private/network/remove", header, tt.wantStatusRemove, nil, urlValues, &intAPIResponse,
+			); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
 
 func Test_API_Routes_IPFS_Private(t *testing.T) {
 	t.Skip("disabled pending refactor")
@@ -39,109 +156,7 @@ func Test_API_Routes_IPFS_Private(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	nm := models.NewHostedIPFSNetworkManager(db)
-
-	// create private network - failure missing name
-	// /v2/ipfs/private/new
-	var apiResp apiResponse
-	urlValues := url.Values{}
-	if err := sendRequest(
-		api, "POST", "/v2/ipfs/private/network/new", 400, nil, nil, &apiResp,
-	); err != nil {
-		t.Fatal(err)
-	}
-	if apiResp.Code != 400 {
-		t.Fatal("bad api status code from /v2/ipfs/private/network/new")
-	}
-	if apiResp.Response != "network_name not present" {
-		t.Fatal("failed to detect missing network_name field")
-	}
-
-	// create private network - failure name is PUBLIC
-	// /v2/ipfs/private/new
-	apiResp = apiResponse{}
-	urlValues = url.Values{}
-	urlValues.Add("network_name", "PUBLIC")
-	if err := sendRequest(
-		api, "POST", "/v2/ipfs/private/network/new", 400, nil, nil, &apiResp,
-	); err != nil {
-		t.Fatal(err)
-	}
-	if apiResp.Code != 400 {
-		t.Fatal("bad api status code from /v2/ipfs/private/network/new")
-	}
-
-	// create private network - failure name is public
-	// /v2/ipfs/private/new
-	apiResp = apiResponse{}
-	urlValues = url.Values{}
-	urlValues.Add("network_name", "public")
-	if err := sendRequest(
-		api, "POST", "/v2/ipfs/private/network/new", 400, nil, nil, &apiResp,
-	); err != nil {
-		t.Fatal(err)
-	}
-	if apiResp.Code != 400 {
-		t.Fatal("bad api status code from /v2/ipfs/private/network/new")
-	}
-
-	// create private network
-	// /v2/ipfs/private/new
-	var mapAPIResp mapAPIResponse
-	urlValues = url.Values{}
-	urlValues.Add("network_name", "abc123")
-	fakeOrch.StartNetworkReturnsOnCall(0, &pbOrch.StartNetworkResponse{PeerId: "hello", SwarmKey: testSwarmKey}, nil)
-	if err := sendRequest(
-		api, "POST", "/v2/ipfs/private/network/new", 200, nil, urlValues, &mapAPIResp,
-	); err != nil {
-		t.Fatal(err)
-	}
-	if mapAPIResp.Code != 200 {
-		t.Fatal("bad api response status code from /v2/ipfs/private/new")
-	}
-	if mapAPIResp.Response["network_name"] != "abc123" {
-		t.Fatal("failed to retrieve correct network name")
-	}
-	if mapAPIResp.Response["peer_id"] != "hello" {
-		t.Fatal("failed to retrieve correct api url")
-	}
-	if mapAPIResp.Response["swarm_key"] != testSwarmKey {
-		t.Fatal("failed to get correct swarm key")
-	}
-	if err := nm.UpdateNetworkByName("abc123", map[string]interface{}{
-		"api_url": cfg.IPFS.APIConnection.Host + ":" + cfg.IPFS.APIConnection.Port,
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	// create private network with parameters
-	// /v2/ipfs/private/network
-	mapAPIResp = mapAPIResponse{}
-	urlValues = url.Values{}
-	urlValues.Add("network_name", "xyz123")
-	urlValues.Add("swarm_key", testSwarmKey)
-	urlValues.Add("bootstrap_peers", testBootstrapPeer1)
-	urlValues.Add("bootstrap_peers", testBootstrapPeer2)
-	urlValues.Add("users", "testuser")
-	urlValues.Add("users", "testuser2")
-	fakeOrch.StartNetworkReturnsOnCall(1, &pbOrch.StartNetworkResponse{PeerId: "hello", SwarmKey: "swarmStorm"}, nil)
-	if err := sendRequest(
-		api, "POST", "/v2/ipfs/private/network/new", 200, nil, urlValues, &mapAPIResp,
-	); err != nil {
-		t.Fatal(err)
-	}
-	if mapAPIResp.Code != 200 {
-		t.Fatal("bad api response status code from /v2/ipfs/private/new")
-	}
-	if mapAPIResp.Response["network_name"] != "xyz123" {
-		t.Fatal("failed to retrieve correct network name")
-	}
-	if mapAPIResp.Response["peer_id"] != "hello" {
-		t.Fatal("failed to retrieve correct api url")
-	}
-	if mapAPIResp.Response["swarm_key"] != "swarmStorm" {
-		t.Fatal("failed to get correct swarm key")
-	}
+	//nm := models.NewHostedIPFSNetworkManager(db)
 
 	// get private network information
 	// /v2/ipfs/private/network/:name
@@ -180,44 +195,6 @@ func Test_API_Routes_IPFS_Private(t *testing.T) {
 		t.Fatal("failed to find correct network from /v2/ipfs/private/networks")
 	}
 
-	// stop private network
-	// /v2/ipfs/private/network/stop
-	// for now until we implement proper grpc testing, this will fail
-	mapAPIResp = mapAPIResponse{}
-	urlValues = url.Values{}
-	urlValues.Add("network_name", "abc123")
-	fakeOrch.StopNetworkReturnsOnCall(0, &pbOrch.Empty{}, nil)
-	if err := sendRequest(
-		api, "POST", "/v2/ipfs/private/network/stop", 200, nil, urlValues, &mapAPIResp,
-	); err != nil {
-		t.Fatal(err)
-	}
-	if mapAPIResp.Code != 200 {
-		t.Fatal("bad api resposne code from /v2/ipfs/private/network/stop")
-	}
-	if mapAPIResp.Response["state"] != "stopped" {
-		t.Fatal("failed to stop network")
-	}
-
-	// start private network
-	// /v2/ipfs/private/network/start
-	// for now until we implement proper grpc testing, this will fail
-	mapAPIResp = mapAPIResponse{}
-	urlValues = url.Values{}
-	urlValues.Add("network_name", "abc123")
-	fakeOrch.StartNetworkReturnsOnCall(2, &pbOrch.StartNetworkResponse{PeerId: "hello", SwarmKey: "test"}, nil)
-	if err := sendRequest(
-		api, "POST", "/v2/ipfs/private/network/start", 200, nil, urlValues, &mapAPIResp,
-	); err != nil {
-		t.Fatal(err)
-	}
-	if mapAPIResp.Code != 200 {
-		t.Fatal("bad api resposne code from /v2/ipfs/private/network/stop")
-	}
-	if mapAPIResp.Response["state"] != "started" {
-		t.Fatal("failed to stop network")
-	}
-
 	// add a file normally
 	// /v2/ipfs/private/file/add
 	bodyBuf := &bytes.Buffer{}
@@ -239,7 +216,7 @@ func Test_API_Routes_IPFS_Private(t *testing.T) {
 	req := httptest.NewRequest("POST", "/v2/ipfs/private/file/add", bodyBuf)
 	req.Header.Add("Authorization", authHeader)
 	req.Header.Add("Content-Type", bodyWriter.FormDataContentType())
-	urlValues = url.Values{}
+	urlValues := url.Values{}
 	urlValues.Add("hold_time", "5")
 	urlValues.Add("network_name", "abc123")
 	req.PostForm = urlValues
@@ -247,7 +224,7 @@ func Test_API_Routes_IPFS_Private(t *testing.T) {
 	if testRecorder.Code != 200 {
 		t.Fatal("bad http status code recovered from /v2/ipfs/private/file/add")
 	}
-	apiResp = apiResponse{}
+	apiResp := apiResponse{}
 	// unmarshal the response
 	bodyBytes, err := ioutil.ReadAll(testRecorder.Result().Body)
 	if err != nil {
@@ -293,7 +270,7 @@ func Test_API_Routes_IPFS_Private(t *testing.T) {
 
 	// test pubsub publish
 	// /v2/ipfs/private/publish/topic
-	mapAPIResp = mapAPIResponse{}
+	mapAPIResp := mapAPIResponse{}
 	urlValues = url.Values{}
 	urlValues.Add("message", "bar")
 	urlValues.Add("network_name", "abc123")
