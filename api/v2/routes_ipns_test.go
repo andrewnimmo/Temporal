@@ -19,7 +19,6 @@ var (
 )
 
 func Test_API_Routes_IPNS_Publish(t *testing.T) {
-	t.Skip("disabled pending refactor")
 	// load configuration
 	cfg, err := config.LoadConfig("../../testenv/config.json")
 	if err != nil {
@@ -29,6 +28,7 @@ func Test_API_Routes_IPNS_Publish(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer db.Close()
 	// create a fake key for testing purposes
 	models.NewUserManager(db).AddIPFSKeyForUser("testuser", "mytestkey", "suchkeymuchwow")
 	type args struct {
@@ -58,6 +58,11 @@ func Test_API_Routes_IPNS_Publish(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			// authentication
+			header, err := loginHelper(api, testUser, testUserPass)
+			if err != nil {
+				t.Fatal(err)
+			}
 			var apiResp apiResponse
 			urlValues := url.Values{}
 			urlValues.Add("hash", tt.args.hash)
@@ -65,8 +70,8 @@ func Test_API_Routes_IPNS_Publish(t *testing.T) {
 			urlValues.Add("ttl", tt.args.ttl)
 			urlValues.Add("key", tt.args.key)
 			urlValues.Add("resolve", tt.args.resolve)
-			if err := sendRequest(
-				api, "POST", "/v2/ipns/public/publish/details", tt.wantStatus, nil, urlValues, &apiResp,
+			if err := sendRequestWithAuth(
+				api, "POST", "/v2/ipns/public/publish/details", header, tt.wantStatus, nil, urlValues, &apiResp,
 			); err != nil {
 				t.Fatal(err)
 			}
@@ -103,13 +108,18 @@ func Test_API_Routes_IPNS_GET(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-
+		defer db.Close()
 		// setup fake mock clients
 		fakeLens := &mocks.FakeLensV2Client{}
 		fakeOrch := &mocks.FakeServiceClient{}
 		fakeSigner := &mocks.FakeSignerClient{}
 
 		api, _, err := setupAPI(fakeLens, fakeOrch, fakeSigner, cfg, db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// authentication
+		header, err := loginHelper(api, testUser, testUserPass)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -127,15 +137,14 @@ func Test_API_Routes_IPNS_GET(t *testing.T) {
 			}
 		}
 		var intAPIResp interfaceAPIResponse
-		if err := sendRequest(
-			api, "GET", "/v2/ipns/records", tt.wantStatus, nil, nil, &intAPIResp,
+		if err := sendRequestWithAuth(
+			api, "GET", "/v2/ipns/records", header, tt.wantStatus, nil, nil, &intAPIResp,
 		); err != nil {
 			t.Fatal(err)
 		}
 	}
 }
 func Test_API_Routes_IPNS_Pin(t *testing.T) {
-
 	type args struct {
 		holdTime string
 		ipnsPath string
@@ -160,13 +169,18 @@ func Test_API_Routes_IPNS_Pin(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-
+			defer db.Close()
 			// setup fake mock clients
 			fakeLens := &mocks.FakeLensV2Client{}
 			fakeOrch := &mocks.FakeServiceClient{}
 			fakeSigner := &mocks.FakeSignerClient{}
 
 			api, _, err := setupAPI(fakeLens, fakeOrch, fakeSigner, cfg, db)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// authentication
+			header, err := loginHelper(api, testUser, testUserPass)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -179,8 +193,8 @@ func Test_API_Routes_IPNS_Pin(t *testing.T) {
 			urlValues := url.Values{}
 			urlValues.Add("hold_time", tt.args.holdTime)
 			urlValues.Add("ipns_path", tt.args.ipnsPath)
-			if err := sendRequest(
-				api, "POST", "/v2/ipns/public/pin", tt.wantStatus, nil, urlValues, &apiResp,
+			if err := sendRequestWithAuth(
+				api, "POST", "/v2/ipns/public/pin", header, tt.wantStatus, nil, urlValues, &apiResp,
 			); err != nil {
 				t.Fatal(err)
 			}

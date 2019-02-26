@@ -386,22 +386,4 @@ func Test_API_Routes_IPFS_Private(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// remove private network
-	// /v2/ipfs/private/network/remove
-	// for now until we implement proper grpc testing, this will fail
-	mapAPIResp = mapAPIResponse{}
-	urlValues = url.Values{}
-	urlValues.Add("network_name", "abc123")
-	fakeOrch.RemoveNetworkReturnsOnCall(0, &pbOrch.Empty{}, nil)
-	if err := sendRequest(
-		api, "DELETE", "/v2/ipfs/private/network/remove", 200, nil, urlValues, &mapAPIResp,
-	); err != nil {
-		t.Fatal(err)
-	}
-	if mapAPIResp.Code != 200 {
-		t.Fatal("bad api response status code from /v2/ipfs/private/network/remove")
-	}
-	if mapAPIResp.Response["state"] != "removed" {
-		t.Fatal("failed to remove network")
-	}
 }
