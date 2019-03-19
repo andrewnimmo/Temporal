@@ -510,8 +510,6 @@ func (api *API) setupRoutes() error {
 		// public ipfs routes
 		public := ipfs.Group("/public")
 		{
-			// proxy in direct api calls
-			public.Any("/*proxy", api.proxyIPFS)
 			// pinning routes
 			pin := public.Group("/pin")
 			{
