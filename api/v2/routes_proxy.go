@@ -22,11 +22,12 @@ func (api *API) proxyIPFS(c *gin.Context) {
 	}
 	username, err := GetAuthenticatedUserFromContext(c)
 	if err != nil {
-		api.LogError(c, err, eh.NoAPITokenError)(http.StatusBadRequest)
+		api.LogError(c, err, eh.NoAPITokenError)
 		return
 	}
+	api.l.Info("reverse proxy request", "user", username)
 	if err := checkCall(c.Param("ipfs")); err != nil {
-		api.LogError(c, err, err.Error())(http.StatusBadRequest)
+		api.LogError(c, err, err.Error())
 		return
 	}
 	var protocol string
@@ -41,17 +42,16 @@ func (api *API) proxyIPFS(c *gin.Context) {
 	)
 	remote, err := url.Parse(target)
 	if err != nil {
-		api.LogError(c, err, err.Error())(http.StatusInternalServerError)
+		api.LogError(c, err, err.Error())
 		return
 	}
-	logger := api.l.Named("proxy").With("user", username)
 	// use remote.Query() to get the url values so we can parse calls
 	// in the case of pin/add, the hash being pinned is under "args"
 	// todo: perform deeper validation of calls, ensuring we properly update
 	// the database, and handle stuff like credits, invalid balances, err..
 	newProxy(
 		remote,
-		logger,
+		api.l.With("user", username),
 		false,
 	).ServeHTTP(c.Writer, c.Request)
 	//proxy.ServeHTTP(c.Writer, c.Request)
@@ -71,7 +71,7 @@ func newProxy(target *url.URL, l *zap.SugaredLogger, direct bool) *httputil.Reve
 			// set other URL properties
 			req.URL.Scheme = target.Scheme
 			req.URL.Host = target.Host
-			l.Infow(
+			l.Named("proxy").Infow(
 				"forwarding request",
 				"url", req.URL.String(),
 				"path", req.URL.Path,
@@ -94,8 +94,52 @@ func stripLeadingSegments(path string) string {
 // to calls that involve removing data, listing pinned data
 // creating keys, publishing, etc...
 func checkCall(request string) error {
+	whiteListedCalls := map[string]bool{
+		// pin calls
+		"pin/add": true,
+
+		// file add
+		"add": true,
+
+		// ipns resolution
+		"resolve": true,
+
+		// dns commands
+		"dns": true,
+
+		// name commands
+		"name/resolve": true,
+
+		// object commands
+		"object/data":  true,
+		"object/diff":  true,
+		"object/links": true,
+		"object/get":   true,
+		// object/put (this needs special handling)
+
+		// dag commands
+		"dag/get":     true,
+		"dag/resolve": true,
+		// dag/put (this needs special handling)
+
+		// dht comands
+		"dht/query":         true,
+		"dht/findpeer":      true,
+		"dht/findprovs":     true,
+		"dht/num-providers": true,
+		"dht/get":           true,
+		// dht/put (this needs special handling)
+
+		// tar commands
+		"tar/cat": true,
+		// tar/add (this needs special handling)
+
+		// misc
+		"get":  true,
+		"refs": true,
+	}
 	trimmed := strings.TrimPrefix(request, "/api/v0/")
-	if !whiteListedProxyCalls[trimmed] {
+	if !whiteListedCalls[trimmed] {
 		return errors.New("sorry the API call you are using is not white listed for reverse proxying")
 	}
 	return nil
