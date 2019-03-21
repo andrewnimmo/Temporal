@@ -9,8 +9,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/streadway/amqp"
-
 	"github.com/RTradeLtd/Temporal/log"
 	"github.com/RTradeLtd/Temporal/rtfscluster"
 	"github.com/RTradeLtd/Temporal/utils"
@@ -18,6 +16,7 @@ import (
 	pbOrch "github.com/RTradeLtd/grpc/nexus"
 	pbSigner "github.com/RTradeLtd/grpc/pay"
 	"github.com/RTradeLtd/kaas"
+	"github.com/streadway/amqp"
 	"go.uber.org/zap"
 
 	"github.com/RTradeLtd/ChainRider-Go/dash"
@@ -497,6 +496,12 @@ func (api *API) setupRoutes() error {
 			auth.POST("/upgrade", api.upgradeAccount)
 			auth.GET("/usage", api.usageData)
 		}
+	}
+
+	// needs to be under an isolated route group or the wildcard will conflict
+	proxied := v2.Group("/proxy", authware...)
+	{
+		proxied.Any("/*ipfs", api.proxyIPFS)
 	}
 
 	// ipfs routes
